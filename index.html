@@ -24,8 +24,6 @@
             -webkit-user-select: none;
         }
         #gameCanvas { position: absolute; top:0; left:0; width:100%; height:100%; z-index:1; }
-
-        /* Menu Principal */
         #mainMenu, #lobbyScreen {
             position: fixed; top:0; left:0; width:100%; height:100%;
             background: rgba(0,0,0,0.55); backdrop-filter: blur(12px);
@@ -39,7 +37,7 @@
             font-size: 7vmin; font-weight: 900; letter-spacing: 0.25em;
             background: linear-gradient(135deg, #f4a261, #e76f51, #e9c46a);
             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            text-shadow: none; filter: drop-shadow(0 0 1.5vmin rgba(244,162,97,0.5));
+            filter: drop-shadow(0 0 1.5vmin rgba(244,162,97,0.5));
         }
         .menu-subtitle { font-size: 2vmin; opacity: 0.85; letter-spacing: 0.3em; margin-top: -1vmin; }
         .menu-panel, .lobby-panel {
@@ -50,18 +48,14 @@
             border: 1px solid rgba(255,255,255,0.15);
             box-shadow: 0 3vmin 6vmin rgba(0,0,0,0.5), 0 0 3vmin rgba(244,162,97,0.15);
         }
-        .menu-panel label, .lobby-panel label {
-            font-size: 1.7vmin; color: #ccc; text-transform: uppercase; letter-spacing: 0.1em;
-        }
+        .menu-panel label, .lobby-panel label { font-size: 1.7vmin; color: #ccc; text-transform: uppercase; letter-spacing: 0.1em; }
         .menu-panel input, .menu-panel select, .lobby-panel select {
             padding: 1.5vmin 2vmin; border-radius: 1.5vmin;
             background: rgba(0,0,0,0.5); color: white;
             border: 1px solid rgba(255,255,255,0.25); font-size: 2vmin;
             outline: none; transition: 0.3s;
         }
-        .menu-panel input:focus, .menu-panel select:focus {
-            border-color: var(--gold); box-shadow: 0 0 1.5vmin rgba(244,162,97,0.4);
-        }
+        .menu-panel input:focus, .menu-panel select:focus { border-color: var(--gold); box-shadow: 0 0 1.5vmin rgba(244,162,97,0.4); }
         .menu-btn {
             padding: 2vmin 4vmin; border-radius: 3vmin; border: none;
             font-weight: 700; font-size: 2vmin; cursor: pointer; text-transform: uppercase;
@@ -217,7 +211,7 @@
     <script type="module">
         import * as THREE from 'three';
 
-        // ==================== MODAL POPUP ====================
+        // ==================== MODAL ====================
         function showModal(message, buttons = [], autoCloseMs = 0) {
             return new Promise((resolve) => {
                 const modal = document.getElementById('customModal');
@@ -278,13 +272,15 @@
 
         const $ = (id) => document.getElementById(id);
 
+        // Tabuleiro próximo ao chão (saindo do gramado)
+        const BOARD_Y = 0.35;  // altura das cartas acima do solo
         const CARD_SIZE = 1.4, SPACING = 1.7;
         const BOARD_OFFSET_X = -SPACING * 2, BOARD_OFFSET_Z = -SPACING * 2;
         let scene, camera, renderer, playerGroup, cardMeshes = [];
         let currentCardIndex = 12, moveDir = { x: 0, z: 0 };
         let cameraAngleX = 0, cameraAngleY = Math.PI / 6, cameraDistance = 16;
         let isDragging = false, lastMouseX = 0, lastMouseY = 0;
-        const CAMERA_SENSITIVITY = 0.01, MIN_DISTANCE = 10, MAX_DISTANCE = 25;
+        const CAMERA_SENSITIVITY = 0.01, MIN_DISTANCE = 8, MAX_DISTANCE = 25;
         let operativeMeshes = { red: null, blue: null };
         let botTimeout = null;
 
@@ -297,7 +293,6 @@
                 return data.choices[0].message.content.trim();
             } catch (e) { console.error('Groq API error:', e); return null; }
         }
-
         async function generateClueAI() {
             if (gameState.gameOver) return;
             const team = gameState.currentTurn;
@@ -309,10 +304,10 @@
             const response = await groqChat([{ role: 'user', content: prompt }]);
             if (response) {
                 const parts = response.split(' '); const word = parts[0].toUpperCase(); const number = parseInt(parts[1]) || 1;
-                if (gameState.words.includes(word)) { const fallback = generateClueFallback(); setClue(fallback.word, fallback.number); addChatMessage(`Dica IA: ${fallback.word} (${fallback.number})`, 'spymaster'); return; }
+                if (gameState.words.includes(word)) { const fallback = generateClueFallback(); setClue(fallback.word, fallback.number); return; }
                 setClue(word, Math.min(number, unrevealed.length));
                 addChatMessage(`Dica IA: ${word} (${Math.min(number, unrevealed.length)})`, 'spymaster');
-            } else { const fallback = generateClueFallback(); setClue(fallback.word, fallback.number); addChatMessage(`Dica IA: ${fallback.word} (${fallback.number})`, 'spymaster'); }
+            } else { const fallback = generateClueFallback(); setClue(fallback.word, fallback.number); addChatMessage(`Dica IA (fallback): ${fallback.word} (${fallback.number})`, 'spymaster'); }
         }
         function generateClueFallback() { const team = gameState.currentTurn; const unrevealed = []; for (let i = 0; i < 25; i++) if (!gameState.revealed[i] && gameState.teams[i] === team) unrevealed.push(gameState.words[i]); const word = unrevealed[0]; return { word: word.toUpperCase(), number: 1 }; }
         async function botGuessAI() {
@@ -329,10 +324,10 @@
         // ==================== THREE.JS ====================
         function createOperativeMesh(team) {
             const group = new THREE.Group(); const color = team === 'red' ? 0xe63946 : 0x457b9d;
-            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 0.8, 8), new THREE.MeshStandardMaterial({ color })); body.position.y = 0.4; body.castShadow = true; group.add(body);
-            const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 16), new THREE.MeshStandardMaterial({ color: 0xffccaa })); head.position.y = 0.95; head.castShadow = true; group.add(head);
-            const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.3, 0.3, 8), new THREE.MeshStandardMaterial({ color: 0x222 })); hat.position.y = 1.15; hat.castShadow = true; group.add(hat);
-            group.position.set(0, 0.2, 0); group.visible = true; scene.add(group); return group;
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.6, 8), new THREE.MeshStandardMaterial({ color })); body.position.y = 0.3; body.castShadow = true; group.add(body);
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), new THREE.MeshStandardMaterial({ color: 0xffccaa })); head.position.y = 0.75; head.castShadow = true; group.add(head);
+            const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.25, 0.25, 8), new THREE.MeshStandardMaterial({ color: 0x222 })); hat.position.y = 0.95; hat.castShadow = true; group.add(hat);
+            group.position.set(0, 0.15, 0); group.visible = true; scene.add(group); return group;
         }
         function initOperatives() {
             if (operativeMeshes.red) scene.remove(operativeMeshes.red);
@@ -340,8 +335,8 @@
             if (gameState.gameMode === 'single') {
                 operativeMeshes.red = createOperativeMesh('red'); operativeMeshes.blue = createOperativeMesh('blue');
                 const redPos = getCardPosition(0); const bluePos = getCardPosition(24);
-                operativeMeshes.red.position.set(redPos.x - 1.5, 0.2, redPos.z - 1.5);
-                operativeMeshes.blue.position.set(bluePos.x + 1.5, 0.2, bluePos.z + 1.5);
+                operativeMeshes.red.position.set(redPos.x - 1.2, BOARD_Y + 0.25, redPos.z - 1.2);
+                operativeMeshes.blue.position.set(bluePos.x + 1.2, BOARD_Y + 0.25, bluePos.z + 1.2);
             } else { operativeMeshes.red = null; operativeMeshes.blue = null; }
         }
         function createWordTexture(word, revealed, team, showColorHint = false) {
@@ -358,96 +353,98 @@
             if (!scene) return; cardMeshes.forEach(m => scene.remove(m)); cardMeshes = [];
             const isSpymaster = myRole === 'spy';
             for (let i = 0; i < 25; i++) {
-                const row = Math.floor(i / 5), col = i % 5; const x = BOARD_OFFSET_X + col * SPACING, z = BOARD_OFFSET_Z + row * SPACING;
+                const row = Math.floor(i / 5), col = i % 5;
+                const x = BOARD_OFFSET_X + col * SPACING, z = BOARD_OFFSET_Z + row * SPACING;
                 const revealed = gameState.revealed[i], team = gameState.teams[i]; const showHint = isSpymaster && !revealed;
                 const tex = createWordTexture(gameState.words[i], revealed, team, showHint);
-                const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.4 }); const geo = new THREE.BoxGeometry(CARD_SIZE, 0.15, CARD_SIZE);
-                const card = new THREE.Mesh(geo, mat); card.position.set(x, 0.075, z); card.castShadow = card.receiveShadow = true;
+                const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.4 }); const geo = new THREE.BoxGeometry(CARD_SIZE, 0.12, CARD_SIZE);
+                const card = new THREE.Mesh(geo, mat); card.position.set(x, BOARD_Y + 0.06, z); card.castShadow = card.receiveShadow = true;
                 card.userData = { index: i }; scene.add(card); cardMeshes.push(card);
             }
         }
 
-        // ==================== CENÁRIO BONITO ====================
         function createScene() {
             scene = new THREE.Scene();
-            // Céu com gradiente
+
+            // Céu vibrante
             const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 512;
             const ctx = canvas.getContext('2d');
-            const gradient = ctx.createRadialGradient(256, 180, 50, 256, 400, 500);
-            gradient.addColorStop(0, '#3a3f6e'); gradient.addColorStop(0.5, '#1a1a2e'); gradient.addColorStop(1, '#0a0a15');
+            const gradient = ctx.createLinearGradient(0, 0, 0, 512);
+            gradient.addColorStop(0, '#87CEEB'); gradient.addColorStop(0.5, '#98D8C8'); gradient.addColorStop(1, '#F4E9D8');
             ctx.fillStyle = gradient; ctx.fillRect(0, 0, 512, 512);
-            // Estrelas
-            for (let i = 0; i < 100; i++) { ctx.fillStyle = `rgba(255,255,255,${Math.random()*0.8+0.2})`; ctx.fillRect(Math.random()*512, Math.random()*300, 2, 2); }
+            for (let i = 0; i < 30; i++) { ctx.fillStyle = `rgba(255,255,255,${Math.random()*0.6+0.2})`; ctx.fillRect(Math.random()*512, Math.random()*200, 3, 3); }
             const skyTex = new THREE.CanvasTexture(canvas);
             scene.background = skyTex;
+            scene.fog = new THREE.Fog(0xd4eef7, 20, 45);
 
-            // Neblina
-            scene.fog = new THREE.Fog(0x1a1a2e, 20, 50);
-
-            // Luz principal
-            const sun = new THREE.DirectionalLight(0xffeedd, 4); sun.position.set(20, 25, 10); sun.castShadow = true;
+            // Sol
+            const sun = new THREE.DirectionalLight(0xfff5e6, 3.5); sun.position.set(15, 20, 5); sun.castShadow = true;
             sun.shadow.mapSize.set(1024, 1024); sun.shadow.camera.near = 1; sun.shadow.camera.far = 60;
-            sun.shadow.camera.left = -15; sun.shadow.camera.right = 15; sun.shadow.camera.top = 15; sun.shadow.camera.bottom = -15;
-            scene.add(sun);
-            scene.add(new THREE.AmbientLight(0x334466, 1.2));
+            sun.shadow.camera.left = -12; sun.shadow.camera.right = 12; sun.shadow.camera.top = 12; sun.shadow.camera.bottom = -12;
+            scene.add(sun); scene.add(new THREE.AmbientLight(0x8899aa, 1.8));
 
-            // Água abaixo da ilha
-            const waterGeo = new THREE.PlaneGeometry(40, 40);
-            const waterMat = new THREE.MeshStandardMaterial({ color: 0x1a3a5c, roughness: 0.3, metalness: 0.2, transparent: true, opacity: 0.85 });
-            const water = new THREE.Mesh(waterGeo, waterMat); water.rotation.x = -Math.PI / 2; water.position.y = -4; water.receiveShadow = true; scene.add(water);
+            // Ilha arredondada (estilo Mario 64)
+            const islandGroup = new THREE.Group();
 
-            // Ilha flutuante (base)
-            const islandGeo = new THREE.CylinderGeometry(5, 7, 1.5, 16);
-            const islandMat = new THREE.MeshStandardMaterial({ color: 0x5a4a3a, roughness: 0.9 });
-            const island = new THREE.Mesh(islandGeo, islandMat); island.position.y = -0.9; island.castShadow = true; island.receiveShadow = true; scene.add(island);
+            // Base da ilha (cilindro arredondado)
+            const baseGeo = new THREE.CylinderGeometry(6, 7, 2, 32);
+            const baseMat = new THREE.MeshStandardMaterial({ color: 0xc49a6c, roughness: 0.7 });
+            const base = new THREE.Mesh(baseGeo, baseMat); base.position.y = -1; base.castShadow = true; base.receiveShadow = true; islandGroup.add(base);
 
-            // Grama em cima
-            const grassGeo = new THREE.CylinderGeometry(4.8, 5, 0.3, 16);
-            const grassMat = new THREE.MeshStandardMaterial({ color: 0x4a7a3a, roughness: 0.8 });
-            const grass = new THREE.Mesh(grassGeo, grassMat); grass.position.y = 0.05; grass.receiveShadow = true; scene.add(grass);
+            // Topo arredondado (esfera achatada)
+            const topGeo = new THREE.SphereGeometry(5.5, 32, 16, 0, Math.PI * 2, 0, Math.PI / 3);
+            const topMat = new THREE.MeshStandardMaterial({ color: 0x6da56a, roughness: 0.8 }); // verde gramado
+            const top = new THREE.Mesh(topGeo, topMat); top.position.y = 0.15; top.receiveShadow = true; islandGroup.add(top);
 
-            // Montanhas ao fundo
-            for (let i = 0; i < 5; i++) {
-                const mountainGeo = new THREE.ConeGeometry(1.5 + Math.random()*2, 3 + Math.random()*4, 8);
-                const mountainMat = new THREE.MeshStandardMaterial({ color: 0x4a5560 + Math.floor(Math.random()*0x202020), roughness: 0.85 });
-                const mountain = new THREE.Mesh(mountainGeo, mountainMat);
-                const angle = (i / 5) * Math.PI * 2 + Math.random()*0.5;
-                mountain.position.set(Math.cos(angle)*8, -2.5, Math.sin(angle)*8);
-                mountain.castShadow = true; mountain.receiveShadow = true; scene.add(mountain);
+            // Aro de terra ao redor
+            const rimGeo = new THREE.TorusGeometry(5.8, 0.6, 16, 32);
+            const rimMat = new THREE.MeshStandardMaterial({ color: 0xb89a7a, roughness: 0.6 });
+            const rim = new THREE.Mesh(rimGeo, rimMat); rim.rotation.x = Math.PI / 2; rim.position.y = 0.1; rim.receiveShadow = true; islandGroup.add(rim);
+
+            scene.add(islandGroup);
+
+            // Montanhas suaves (colinas)
+            for (let i = 0; i < 6; i++) {
+                const hillGeo = new THREE.SphereGeometry(1.8 + Math.random()*1.5, 16, 12, 0, Math.PI*2, 0, Math.PI/2);
+                const hillMat = new THREE.MeshStandardMaterial({ color: 0x7ba05b + Math.floor(Math.random()*0x303010), roughness: 0.85 });
+                const hill = new THREE.Mesh(hillGeo, hillMat);
+                const angle = (i / 6) * Math.PI * 2 + Math.random()*0.5;
+                hill.position.set(Math.cos(angle)*8, -1.2, Math.sin(angle)*8);
+                hill.castShadow = true; hill.receiveShadow = true; scene.add(hill);
             }
 
-            // Nuvens
-            for (let i = 0; i < 8; i++) {
+            // Nuvens fofas
+            for (let i = 0; i < 10; i++) {
                 const cloudGroup = new THREE.Group();
-                for (let j = 0; j < 3; j++) {
-                    const cloudGeo = new THREE.SphereGeometry(0.8 + Math.random()*0.6, 8, 8);
-                    const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true, opacity: 0.7 });
+                for (let j = 0; j < 4; j++) {
+                    const cloudGeo = new THREE.SphereGeometry(0.7 + Math.random()*0.5, 8, 8);
+                    const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true, opacity: 0.9 });
                     const cloudPart = new THREE.Mesh(cloudGeo, cloudMat);
-                    cloudPart.position.set(j*1.2 - 1.2, Math.random()*0.3, Math.random()*0.4);
+                    cloudPart.position.set(j*1.1 - 1.5, Math.random()*0.4, Math.random()*0.5);
                     cloudGroup.add(cloudPart);
                 }
-                cloudGroup.position.set(-12 + i*3.5, 6 + Math.random()*4, -3 + Math.random()*6);
+                cloudGroup.position.set(-14 + i*3, 7 + Math.random()*5, -5 + Math.random()*10);
                 scene.add(cloudGroup);
             }
 
-            // Chão do tabuleiro
-            const boardFloor = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), new THREE.MeshStandardMaterial({ color: 0x3d2b1f, roughness: 0.7 }));
-            boardFloor.rotation.x = -Math.PI / 2; boardFloor.position.y = 0.18; boardFloor.receiveShadow = true; scene.add(boardFloor);
+            // Gramado do tabuleiro (pequeno platô)
+            const boardGrass = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 5.5, 0.2, 32), new THREE.MeshStandardMaterial({ color: 0x5a8f4a, roughness: 0.7 }));
+            boardGrass.position.y = BOARD_Y - 0.1; boardGrass.receiveShadow = true; boardGrass.castShadow = true; scene.add(boardGrass);
 
             // Boneco do jogador
             const bodyColor = myTeam === 'red' ? 0xe63946 : 0x457b9d;
             playerGroup = new THREE.Group();
-            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 0.8, 8), new THREE.MeshStandardMaterial({ color: bodyColor })); body.position.y = 0.4; body.castShadow = true; playerGroup.add(body);
-            const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 16), new THREE.MeshStandardMaterial({ color: 0xffccaa })); head.position.y = 0.95; head.castShadow = true; playerGroup.add(head);
-            const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.3, 0.3, 8), new THREE.MeshStandardMaterial({ color: 0x222 })); hat.position.y = 1.15; hat.castShadow = true; playerGroup.add(hat);
-            playerGroup.position.set(BOARD_OFFSET_X + 2 * SPACING, 0.35, BOARD_OFFSET_Z + 2 * SPACING);
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.6, 8), new THREE.MeshStandardMaterial({ color: bodyColor })); body.position.y = 0.3; body.castShadow = true; playerGroup.add(body);
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), new THREE.MeshStandardMaterial({ color: 0xffccaa })); head.position.y = 0.75; head.castShadow = true; playerGroup.add(head);
+            const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.25, 0.25, 8), new THREE.MeshStandardMaterial({ color: 0x222 })); hat.position.y = 0.95; hat.castShadow = true; playerGroup.add(hat);
+            playerGroup.position.set(BOARD_OFFSET_X + 2 * SPACING, BOARD_Y + 0.35, BOARD_OFFSET_Z + 2 * SPACING);
             playerGroup.visible = false; scene.add(playerGroup);
         }
 
         function initThreeJS() {
             createScene();
             camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
-            camera.position.set(0, 8, 14);
+            camera.position.set(0, 8, 12);
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = true;
             $('gameCanvas').appendChild(renderer.domElement);
@@ -476,7 +473,7 @@
             if (myRole === 'spy' && isDragging) {
                 const dx = pos.clientX - lastMouseX, dy = pos.clientY - lastMouseY;
                 cameraAngleX -= dx * CAMERA_SENSITIVITY; cameraAngleY -= dy * CAMERA_SENSITIVITY;
-                cameraAngleY = Math.max(0.1, Math.min(Math.PI / 2, cameraAngleY)); lastMouseX = pos.clientX; lastMouseY = pos.clientY;
+                cameraAngleY = Math.max(0.1, Math.min(Math.PI / 2.5, cameraAngleY)); lastMouseX = pos.clientX; lastMouseY = pos.clientY;
             } else if (myRole === 'op' && joystickActive && floatingJoystick) {
                 const dx = pos.clientX - joystickStartPos.x, dy = pos.clientY - joystickStartPos.y, maxDist = 60, dist = Math.hypot(dx, dy), clampedDist = Math.min(dist, maxDist), angle = Math.atan2(dy, dx);
                 const thumb = floatingJoystick.querySelector('.thumb'); thumb.style.transform = `translate(calc(-50% + ${Math.cos(angle)*clampedDist}px), calc(-50% + ${Math.sin(angle)*clampedDist}px))`;
@@ -486,8 +483,16 @@
         function onPointerUp() { if (myRole === 'spy') isDragging = false; else if (myRole === 'op') { joystickActive = false; moveDir.x = 0; moveDir.z = 0; if (floatingJoystick) { floatingJoystick.remove(); floatingJoystick = null; } } }
         function onWheel(e) { if (myRole === 'spy' && gameActive) { e.preventDefault(); cameraDistance += e.deltaY * 0.01; cameraDistance = Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, cameraDistance)); } }
         function updateCameraPosition() {
-            if (myRole === 'spy') { const x = cameraDistance * Math.sin(cameraAngleY) * Math.cos(cameraAngleX); const y = cameraDistance * Math.cos(cameraAngleY); const z = cameraDistance * Math.sin(cameraAngleY) * Math.sin(cameraAngleX); camera.position.set(x, y, z); camera.lookAt(0, 0, 0); }
-            else { const target = playerGroup.position.clone().add(new THREE.Vector3(0, 7, 9)); camera.position.lerp(target, 0.1); camera.lookAt(playerGroup.position.clone().add(new THREE.Vector3(0, 1, -1))); }
+            if (myRole === 'spy') {
+                const x = cameraDistance * Math.sin(cameraAngleY) * Math.cos(cameraAngleX);
+                const y = cameraDistance * Math.cos(cameraAngleY);
+                const z = cameraDistance * Math.sin(cameraAngleY) * Math.sin(cameraAngleX);
+                camera.position.set(x, y + 2, z); camera.lookAt(0, 0, 0);
+            } else {
+                const target = playerGroup.position.clone().add(new THREE.Vector3(0, 6, 8));
+                camera.position.lerp(target, 0.1);
+                camera.lookAt(playerGroup.position.clone().add(new THREE.Vector3(0, 0.5, -0.5)));
+            }
         }
 
         // ==================== JOGO ====================
@@ -498,7 +503,8 @@
             for (let i = 0; i < 9; i++) teams.push(firstTeam); for (let i = 0; i < 8; i++) teams.push(secondTeam); for (let i = 0; i < 7; i++) teams.push('civilian'); teams.push('assassin');
             gameState.words = words; gameState.teams = shuffle(teams); gameState.revealed = new Array(25).fill(false);
             gameState.redRemaining = gameState.teams.filter(t => t === 'red').length; gameState.blueRemaining = gameState.teams.filter(t => t === 'blue').length;
-            gameState.gameOver = false; gameState.winner = null; gameState.currentTurn = 'red'; gameState.clueWord = ''; gameState.clueNumber = 0; gameState.guessesRemaining = 0;
+            gameState.gameOver = false; gameState.winner = null; gameState.currentTurn = 'red';
+            gameState.clueWord = ''; gameState.clueNumber = 0; gameState.guessesRemaining = 0;
             if (gameState.gameMode === 'single') { gameState.humanMaster = { red: false, blue: false }; if (myRole === 'spy') gameState.humanMaster[myTeam] = true; }
             else { gameState.humanMaster = { red: false, blue: false }; for (const p of lobbyPlayers) { if (p.role === 'spy') gameState.humanMaster[p.team] = true; } }
             updateUI(); scheduleClue();
@@ -508,7 +514,7 @@
         function setClue(word, number) { gameState.clueWord = word; gameState.clueNumber = number; gameState.guessesRemaining = number + 1; $('hintText').textContent = `DICA: "${word}" (${number})`; $('guessesLeft').textContent = `Tentativas: ${gameState.guessesRemaining}`; updateChatState(); scheduleOperativeAction(); }
         function scheduleOperativeAction() { if (botTimeout) clearTimeout(botTimeout); if (gameState.gameOver) return; const team = gameState.currentTurn; if (gameState.gameMode === 'single' && !(myRole === 'op' && myTeam === team)) { botTimeout = setTimeout(() => performBotAction(), 1500); } }
         async function performBotAction() { if (gameState.gameOver || gameState.gameMode !== 'single') return; const team = gameState.currentTurn; const bestIndex = await botGuessAI(); if (bestIndex === null || gameState.revealed[bestIndex]) return; const chosenWord = gameState.words[bestIndex]; showInfoModal(`Peão ${team === 'red' ? '🔴 Vermelho' : '🔵 Azul'} escolheu: ${chosenWord}`); const mesh = operativeMeshes[team]; if (mesh) { const cardPos = getCardPosition(bestIndex); animateOperativeTo(mesh, cardPos, () => { revealCard(bestIndex); if (!gameState.gameOver && gameState.currentTurn === team && gameState.guessesRemaining > 0) performBotAction(); }); } else { revealCard(bestIndex); if (!gameState.gameOver && gameState.currentTurn === team && gameState.guessesRemaining > 0) performBotAction(); } }
-        function animateOperativeTo(mesh, targetPos, callback) { const startPos = mesh.position.clone(), duration = 1000, startTime = Date.now(); function step() { const elapsed = Date.now() - startTime, t = Math.min(elapsed / duration, 1); mesh.position.lerpVectors(startPos, new THREE.Vector3(targetPos.x, 0.2, targetPos.z), t); mesh.position.y = 0.2 + Math.sin(t * Math.PI * 2) * 0.1; if (t < 1) requestAnimationFrame(step); else { mesh.position.set(targetPos.x, 0.2, targetPos.z); if (callback) callback(); } } step(); }
+        function animateOperativeTo(mesh, targetPos, callback) { const startPos = mesh.position.clone(), duration = 1000, startTime = Date.now(); function step() { const elapsed = Date.now() - startTime, t = Math.min(elapsed / duration, 1); mesh.position.lerpVectors(startPos, new THREE.Vector3(targetPos.x, BOARD_Y + 0.25, targetPos.z), t); mesh.position.y = BOARD_Y + 0.25 + Math.sin(t * Math.PI * 2) * 0.1; if (t < 1) requestAnimationFrame(step); else { mesh.position.set(targetPos.x, BOARD_Y + 0.25, targetPos.z); if (callback) callback(); } } step(); }
         function revealCard(index) {
             if (gameState.revealed[index] || gameState.gameOver) return; const team = gameState.teams[index]; gameState.revealed[index] = true;
             let points = 0, switchTurn = false;
@@ -528,9 +534,25 @@
         // ==================== REDE ====================
         function updateLobbyUI() { const list = $('playerList'); list.innerHTML = ''; for (const p of lobbyPlayers) { const div = document.createElement('div'); div.className = 'player-item'; div.innerHTML = `<span>${p.nick} (${p.team === 'red' ? '🔴' : '🔵'})</span><span>${p.role === 'spy' ? 'Mestre' : 'Operador'}</span>`; list.appendChild(div); } $('btnStartGame').style.display = isHost ? 'block' : 'none'; }
         function showLobby() { $('mainMenu').classList.add('hidden'); $('lobbyScreen').style.display = 'flex'; if (isHost) { $('lobbyLink').style.display = 'block'; } updateLobbyUI(); }
-        function initPeer(roomId) { peer = new Peer(roomId || undefined, { config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] } }); peer.on('open', id => { if (!roomId) { isHost = true; const link = `${location.origin}${location.pathname}?room=${id}`; $('lobbyRoomLink').textContent = link; lobbyPlayers = [{ id: peer.id, nick: myNick, team: myTeam, role: myRole }]; showLobby(); } if (roomId) { connectToHost(roomId); } }); peer.on('connection', conn => { connections[conn.peer] = conn; conn.on('data', data => handleMessage(conn, data)); }); }
-        function connectToHost(hostId) { const conn = peer.connect(hostId, { reliable: true }); conn.on('open', () => { hostConn = conn; conn.on('data', data => handleMessage(conn, data)); conn.send({ type: 'join', nick: myNick, role: myRole, team: myTeam }); showLobby(); }); }
-        function handleMessage(conn, data) { if (data.type === 'join' && isHost) { const newPlayer = { id: conn.peer, nick: data.nick, role: data.role, team: data.team }; if (!lobbyPlayers.find(p => p.id === conn.peer)) { lobbyPlayers.push(newPlayer); } broadcast({ type: 'lobbyUpdate', players: lobbyPlayers }); if (data.role === 'spy') gameState.humanMaster[data.team] = true; updateLobbyUI(); } else if (data.type === 'lobbyUpdate') { lobbyPlayers = data.players; updateLobbyUI(); } else if (data.type === 'startGame') { $('lobbyScreen').style.display = 'none'; startGame(); } else if (data.type === 'state') { Object.assign(gameState, data.state); updateUI(); rebuildBoard(); updateConfirmButton(); updateChatState(); } else if (data.type === 'clue') { setClue(data.word, data.number); updateChatState(); } else if (data.type === 'action') { if (data.action === 'click') revealCard(data.index); else if (data.action === 'pass') { gameState.currentTurn = gameState.currentTurn === 'red' ? 'blue' : 'red'; gameState.clueWord = ''; gameState.guessesRemaining = 0; $('guessesLeft').textContent = ''; updateUI(); updateChatState(); if (isHost) broadcastState(); scheduleClue(); } } else if (data.type === 'chat') { addChatMessage(data.text, data.from === myNick ? 'self' : 'other', data.from); if (isHost) broadcast(data, conn.peer); } }
+        function initPeer(roomId) {
+            peer = new Peer(roomId || undefined, { config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] } });
+            peer.on('open', id => {
+                if (!roomId) { isHost = true; const link = `${location.origin}${location.pathname}?room=${id}`; $('lobbyRoomLink').textContent = link; lobbyPlayers = [{ id: peer.id, nick: myNick, team: myTeam, role: myRole }]; showLobby(); }
+                if (roomId) { connectToHost(roomId); }
+            });
+            peer.on('connection', conn => { connections[conn.peer] = conn; conn.on('data', data => handleMessage(conn, data)); });
+            peer.on('error', err => { console.error('PeerJS error:', err); customAlert('Erro na conexão: ' + err.message); });
+        }
+        function connectToHost(hostId) { const conn = peer.connect(hostId, { reliable: true }); conn.on('open', () => { hostConn = conn; conn.on('data', data => handleMessage(conn, data)); conn.send({ type: 'join', nick: myNick, role: myRole, team: myTeam }); showLobby(); }); conn.on('error', err => { console.error('Connection error:', err); }); }
+        function handleMessage(conn, data) {
+            if (data.type === 'join' && isHost) { const newPlayer = { id: conn.peer, nick: data.nick, role: data.role, team: data.team }; if (!lobbyPlayers.find(p => p.id === conn.peer)) { lobbyPlayers.push(newPlayer); } if (data.role === 'spy') gameState.humanMaster[data.team] = true; broadcast({ type: 'lobbyUpdate', players: lobbyPlayers }); updateLobbyUI(); }
+            else if (data.type === 'lobbyUpdate') { lobbyPlayers = data.players; updateLobbyUI(); }
+            else if (data.type === 'startGame') { $('lobbyScreen').style.display = 'none'; startGame(); }
+            else if (data.type === 'state') { Object.assign(gameState, data.state); updateUI(); rebuildBoard(); updateConfirmButton(); updateChatState(); }
+            else if (data.type === 'clue') { setClue(data.word, data.number); updateChatState(); }
+            else if (data.type === 'action') { if (data.action === 'click') revealCard(data.index); else if (data.action === 'pass') { gameState.currentTurn = gameState.currentTurn === 'red' ? 'blue' : 'red'; gameState.clueWord = ''; gameState.guessesRemaining = 0; $('guessesLeft').textContent = ''; updateUI(); updateChatState(); if (isHost) broadcastState(); scheduleClue(); } }
+            else if (data.type === 'chat') { addChatMessage(data.text, data.from === myNick ? 'self' : 'other', data.from); if (isHost) broadcast(data, conn.peer); }
+        }
         function broadcast(msg, exclude) { Object.values(connections).forEach(c => { if (c.peer !== exclude) c.send(msg); }); }
         function broadcastState() { broadcast({ type: 'state', state: gameState }); }
         function addChatMessage(text, type, sender) { const div = document.createElement('div'); div.className = `chat-msg chat-${type}`; div.textContent = (sender ? sender + ': ' : '') + text; $('chatMessages').appendChild(div); div.scrollIntoView({ behavior: 'smooth' }); }
@@ -551,10 +573,47 @@
             $('chatHeader').addEventListener('click', () => { const msgs = $('chatMessages'), row = $('chatInputRow'); const hidden = msgs.style.display === 'none'; msgs.style.display = hidden ? 'flex' : 'none'; row.style.display = hidden ? 'flex' : 'none'; $('chatToggle').textContent = hidden ? '▼' : '▲'; });
         }
         function getCardPosition(i) { const row = Math.floor(i / 5), col = i % 5; return { x: BOARD_OFFSET_X + col * SPACING, z: BOARD_OFFSET_Z + row * SPACING }; }
-        function animate() { requestAnimationFrame(animate); if (!gameActive || !playerGroup) return; const dt = Math.min(0.1, 0.016); if (playerGroup.visible && (Math.abs(moveDir.x) > 0.1 || Math.abs(moveDir.z) > 0.1)) { const p = playerGroup.position; p.x += moveDir.x * 4 * dt; p.z += moveDir.z * 4 * dt; const minX = BOARD_OFFSET_X - 0.5, maxX = BOARD_OFFSET_X + 4 * SPACING + 0.5, minZ = BOARD_OFFSET_Z - 0.5, maxZ = BOARD_OFFSET_Z + 4 * SPACING + 0.5; p.x = Math.max(minX, Math.min(maxX, p.x)); p.z = Math.max(minZ, Math.min(maxZ, p.z)); let closest = currentCardIndex, closestD = Infinity; for (let i = 0; i < 25; i++) { const cp = getCardPosition(i); const d = Math.hypot(p.x - cp.x, p.z - cp.z); if (d < closestD) { closestD = d; closest = i; } } currentCardIndex = closest; updateConfirmButton(); } if (playerGroup.visible) playerGroup.position.y = 0.35 + Math.sin(Date.now() * 0.008) * 0.08; updateCameraPosition(); renderer.render(scene, camera); }
-        async function loadCustomWords() { try { const resp = await fetch('./Palavras/Packs.txt'); if (resp.ok) { const words = (await resp.text()).split(/\r?\n/).map(w => w.trim()).filter(w => w.length > 0); if (words.length >= 25) wordList = words; } } catch (e) {} }
-        function startGame() { $('lobbyScreen').style.display = 'none'; $('mainMenu').classList.add('hidden'); $('topBar').style.display = 'flex'; $('actionButtons').style.display = 'flex'; $('chatContainer').style.display = 'flex'; playerGroup.visible = (myRole === 'op'); if (myRole !== 'op') { camera.position.set(0, 12, 16); camera.lookAt(0, 0, 0); } initOperatives(); createGame(); rebuildBoard(); updateUI(); updateChatState(); gameActive = true; }
-        loadCustomWords().then(() => { initThreeJS(); bindEvents(); gameState.words = wordList.slice(0, 25); gameState.teams = new Array(25).fill('civilian'); gameState.revealed = new Array(25).fill(false); rebuildBoard(); animate(); });
+        function animate() {
+            requestAnimationFrame(animate);
+            if (!gameActive || !playerGroup) return;
+            const dt = Math.min(0.1, 0.016);
+            if (playerGroup.visible && (Math.abs(moveDir.x) > 0.1 || Math.abs(moveDir.z) > 0.1)) {
+                const p = playerGroup.position;
+                p.x += moveDir.x * 4 * dt; p.z += moveDir.z * 4 * dt;
+                const minX = BOARD_OFFSET_X - 0.5, maxX = BOARD_OFFSET_X + 4 * SPACING + 0.5, minZ = BOARD_OFFSET_Z - 0.5, maxZ = BOARD_OFFSET_Z + 4 * SPACING + 0.5;
+                p.x = Math.max(minX, Math.min(maxX, p.x)); p.z = Math.max(minZ, Math.min(maxZ, p.z));
+                let closest = currentCardIndex, closestD = Infinity;
+                for (let i = 0; i < 25; i++) { const cp = getCardPosition(i); const d = Math.hypot(p.x - cp.x, p.z - cp.z); if (d < closestD) { closestD = d; closest = i; } }
+                currentCardIndex = closest; updateConfirmButton();
+            }
+            if (playerGroup.visible) playerGroup.position.y = BOARD_Y + 0.3 + Math.sin(Date.now() * 0.008) * 0.05;
+            updateCameraPosition(); renderer.render(scene, camera);
+        }
+
+        async function loadCustomWords() {
+            try { const resp = await fetch('./palavras.txt'); if (resp.ok) { const words = (await resp.text()).split(/\r?\n/).map(w => w.trim()).filter(w => w.length > 0); if (words.length >= 25) { wordList = words; console.log('Palavras carregadas do palavras.txt'); } } } catch (e) { console.log('Usando palavras padrão.'); }
+        }
+
+        function startGame() {
+            $('lobbyScreen').style.display = 'none'; $('mainMenu').classList.add('hidden');
+            $('topBar').style.display = 'flex'; $('actionButtons').style.display = 'flex'; $('chatContainer').style.display = 'flex';
+            playerGroup.visible = (myRole === 'op');
+            if (myRole !== 'op') { camera.position.set(0, 10, 14); camera.lookAt(0, 0, 0); }
+            initOperatives(); createGame(); rebuildBoard(); updateUI(); updateChatState(); gameActive = true;
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const autoRoomId = urlParams.get('room');
+        if (autoRoomId) {
+            myNick = prompt('Digite seu nickname:') || 'Jogador';
+            const team = prompt('Time? (red/blue)') || 'red';
+            const role = prompt('Papel? (spy/op)') || 'op';
+            myTeam = team; myRole = role; gameState.gameMode = 'multi';
+            $('mainMenu').classList.add('hidden');
+            initPeer(autoRoomId);
+        } else {
+            loadCustomWords().then(() => { initThreeJS(); bindEvents(); gameState.words = wordList.slice(0, 25); gameState.teams = new Array(25).fill('civilian'); gameState.revealed = new Array(25).fill(false); rebuildBoard(); animate(); });
+        }
     </script>
 </body>
 </html>
